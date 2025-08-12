@@ -1,0 +1,5 @@
+streamlit>=1.23
+requests
+azure-storage-blob>=12.14.1
+python-dotenv
+openai>=1.0.0
