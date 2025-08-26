@@ -102,7 +102,8 @@ if send_clicked and user_input.strip():
         st.session_state.pending_refined_prompt = refined
         st.session_state.messages.append({"role": "user", "content": user_input})
         st.session_state.messages.append({"role": "assistant", "content": f"Here’s a refined version of your idea:\n\n```{refined}```\n\nEdit it if you like, then click **Generate Image**."})
-    st.experimental_rerun()
+        st.rerun()
+
 
 # Step 2: Show editable prompt
 if st.session_state.pending_refined_prompt:
@@ -118,4 +119,5 @@ if generate_clicked and st.session_state.pending_refined_prompt:
             st.session_state.messages.append({"role": "user", "content": f"Generate image for:\n\n```{edited_prompt}```"})
             st.session_state.messages.append({"role": "assistant", "content": "Here's your generated fashion design 👇", "image": img})
             st.session_state.pending_refined_prompt = None
-            st.experimental_rerun()
+            st.rerun()
+
