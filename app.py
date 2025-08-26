@@ -17,17 +17,14 @@ def refine_prompt_with_context(chat_history: list, user_prompt: str) -> str:
         {"role": "system", "content": "You are a fashion design assistant. Refine user descriptions into clear, vivid product photography prompts for DALL·E 3."}
     ]
 
-    # Add previous conversation to context
-    for role, content in chat_history:
-        if role == "User":
-            messages.append({"role": "user", "content": content})
-        elif role == "Refined":
-            messages.append({"role": "assistant", "content": content})
+    for entry in chat_history:
+        if entry["role"] == "user":
+            messages.append({"role": "user", "content": entry["content"]})
+        elif entry["role"] == "assistant":
+            messages.append({"role": "assistant", "content": entry["content"]})
 
-    # Add the current user prompt
     messages.append({"role": "user", "content": user_prompt})
 
-    # API call to refine the prompt
     url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{GPT_DEPLOYMENT}/chat/completions?api-version=2024-02-01"
     headers = {
         "api-key": AZURE_OPENAI_KEY,
@@ -42,7 +39,7 @@ def refine_prompt_with_context(chat_history: list, user_prompt: str) -> str:
     data = r.json()
     return data["choices"][0]["message"]["content"]
 
-# DALL·E 3 image generator
+# Image generation
 def generate_image_with_dalle(prompt: str, size="1024x1024"):
     url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{DALLE_DEPLOYMENT}/images/generations?api-version=2024-02-01"
     headers = {
@@ -64,8 +61,7 @@ def generate_image_with_dalle(prompt: str, size="1024x1024"):
         return None
 
     if "b64_json" in data["data"][0]:
-        b64_img = data["data"][0]["b64_json"]
-        return base64.b64decode(b64_img)
+        return base64.b64decode(data["data"][0]["b64_json"])
 
     if "url" in data["data"][0]:
         return data["data"][0]["url"]
@@ -74,70 +70,52 @@ def generate_image_with_dalle(prompt: str, size="1024x1024"):
     return None
 
 # Initialize session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if "refined_prompt" not in st.session_state:
-    st.session_state.refined_prompt = ""
+if "pending_refined_prompt" not in st.session_state:
+    st.session_state.pending_refined_prompt = None
 
-# Streamlit UI
+# Set page
 st.set_page_config(page_title="VeraDesign AI Fashion", page_icon="🧵")
-st.title("🧵 VeraDesign AI Fashion")
-st.write("Describe the image or artwork you want to print on your apparel in simple language.")
+st.title("🧵 VeraDesign AI Fashion Assistant")
 
-user_input = st.text_area("Describe your apparel idea:", height=100)
-size = st.selectbox(
-    "Image size",
-    ["1024x1024", "1024x1792", "1792x1024"]
-)
+# Display conversation
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        if "image" in msg:
+            st.image(msg["image"], caption="Generated Design")
 
-# Step 1: Refine the user prompt
-if st.button("Refine Prompt"):
-    if not user_input.strip():
-        st.error("Please enter a description.")
-    else:
-        with st.spinner("Refining your prompt..."):
-            refined = refine_prompt_with_context(st.session_state.chat_history, user_input)
-            st.session_state.refined_prompt = refined
-            st.session_state.chat_history.append(("User", user_input))
-            st.session_state.chat_history.append(("Refined", refined))
+# Input area
+with st.chat_message("user"):
+    user_input = st.text_area("Describe your fashion design:", height=100, key="user_prompt")
+    size = st.selectbox("Select image size", ["1024x1024", "1024x1792", "1792x1024"], key="img_size")
+    col1, col2 = st.columns([1, 1])
+    send_clicked = col1.button("Refine Prompt")
+    generate_clicked = col2.button("Generate Image")
 
-# Step 2: Review, Edit + Approve Refined Prompt
-if st.session_state.refined_prompt:
-    st.subheader("Review and Edit the Refined Prompt")
-    edited_prompt = st.text_area("Refined Prompt", value=st.session_state.refined_prompt, height=100)
-    
-    # Step 3: Generate Image with approved/refined prompt
-    if st.button("Generate Image"):
-        with st.spinner("Generating image..."):
-            img_data = generate_image_with_dalle(edited_prompt, size=size)
-            st.session_state.chat_history.append(("Final Prompt", edited_prompt))
-            st.session_state.chat_history.append(("Image Generated", "✅"))
+# Step 1: Refine the prompt
+if send_clicked and user_input.strip():
+    with st.spinner("Refining your prompt..."):
+        refined = refine_prompt_with_context(st.session_state.messages, user_input)
+        st.session_state.pending_refined_prompt = refined
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        st.session_state.messages.append({"role": "assistant", "content": f"Here’s a refined version of your idea:\n\n```{refined}```\n\nEdit it if you like, then click **Generate Image**."})
+    st.experimental_rerun()
 
-            if img_data:
-                if isinstance(img_data, bytes):
-                    st.image(img_data, caption="Generated Apparel Design")
-                elif isinstance(img_data, str):
-                    st.image(img_data, caption="Generated Apparel Design (from URL)")
+# Step 2: Show editable prompt
+if st.session_state.pending_refined_prompt:
+    with st.chat_message("user"):
+        edited_prompt = st.text_area("Edit the refined prompt:", value=st.session_state.pending_refined_prompt, key="edited_prompt")
 
-# Step 4: Edit Previous Prompts + Re-generate Image
-if st.session_state.chat_history:
-    st.subheader("Conversation History")
-    for i, (role, content) in enumerate(st.session_state.chat_history):
-        if role == "Final Prompt":
-            st.markdown(f"**{role}:**")
-            edited = st.text_area(f"Edit Prompt #{i}", value=content, key=f"edit_{i}")
-            if st.button(f"Re-generate Image #{i}"):
-                with st.spinner(f"Regenerating image #{i}..."):
-                    img = generate_image_with_dalle(edited, size=size)
-                    if img:
-                        st.image(img, caption=f"Updated Design #{i}")
-                    # Add edited prompt to history
-                    st.session_state.chat_history.append(("Re-edited Prompt", edited))
-                    st.session_state.chat_history.append(("Re-generated Image", "✅"))
-
-# Display entire chat history for transparency
-if st.session_state.chat_history:
-    st.subheader("Full Chat History (this session)")
-    for role, content in st.session_state.chat_history:
-        st.markdown(f"**{role}:** {content}")
+# Step 3: Generate image
+if generate_clicked and st.session_state.pending_refined_prompt:
+    edited_prompt = st.session_state.get("edited_prompt", st.session_state.pending_refined_prompt)
+    with st.spinner("Generating image..."):
+        img = generate_image_with_dalle(edited_prompt, size=st.session_state.get("img_size", "1024x1024"))
+        if img:
+            st.session_state.messages.append({"role": "user", "content": f"Generate image for:\n\n```{edited_prompt}```"})
+            st.session_state.messages.append({"role": "assistant", "content": "Here's your generated fashion design 👇", "image": img})
+            st.session_state.pending_refined_prompt = None
+            st.experimental_rerun()
