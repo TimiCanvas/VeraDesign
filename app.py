@@ -83,7 +83,7 @@ if "refined_prompt" not in st.session_state:
 # Streamlit UI
 st.set_page_config(page_title="VeraDesign AI Fashion", page_icon="🧵")
 st.title("🧵 VeraDesign AI Fashion")
-st.write("Describe any apparel design in natural language and see it instantly.")
+st.write("Describe the image or artwork you want to print on your apparel in simple language.")
 
 user_input = st.text_area("Describe your apparel idea:", height=100)
 size = st.selectbox(
